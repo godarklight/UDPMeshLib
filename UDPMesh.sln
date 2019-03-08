@@ -1,0 +1,28 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UDPMesh", "UDPMesh\UDPMesh.csproj", "{55D2DB80-55D4-4B73-823A-D005F58351F8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UDPMeshLib", "UDPMeshLib\UDPMeshLib.csproj", "{D55400C8-5309-4F98-BC7F-F789690F23B3}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{C38DDF82-B481-45A3-B844-222555F763E1}"
+	ProjectSection(SolutionItems) = preProject
+		ProtocolDocumentation.txt = ProtocolDocumentation.txt
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x86 = Debug|x86
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{55D2DB80-55D4-4B73-823A-D005F58351F8}.Debug|x86.ActiveCfg = Debug|x86
+		{55D2DB80-55D4-4B73-823A-D005F58351F8}.Debug|x86.Build.0 = Debug|x86
+		{55D2DB80-55D4-4B73-823A-D005F58351F8}.Release|x86.ActiveCfg = Release|x86
+		{55D2DB80-55D4-4B73-823A-D005F58351F8}.Release|x86.Build.0 = Release|x86
+		{D55400C8-5309-4F98-BC7F-F789690F23B3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D55400C8-5309-4F98-BC7F-F789690F23B3}.Debug|x86.Build.0 = Debug|Any CPU
+		{D55400C8-5309-4F98-BC7F-F789690F23B3}.Release|x86.ActiveCfg = Release|Any CPU
+		{D55400C8-5309-4F98-BC7F-F789690F23B3}.Release|x86.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

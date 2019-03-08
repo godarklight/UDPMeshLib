@@ -1,0 +1,74 @@
+﻿All communication is done big endian for GUID and Int types
+
+Header format:
+XXXXGGGGGGGGGGGGGGGGYYYY[payload]
+XXXX: UDPM, magic token
+GGGGGGGGGGGGGGGG: GUID, 16 byte client identifier
+YYYY: Int32, type identifier
+
+Using negative types for plugin communication/mesh generation, positive types are for applications use
+Payloads:
+
+===Server->Client===
+
+--Type: -1 Inform client of endpoints
+[GUID]...
+This packet is just the list of GUID's repeated that a connected to the server, read till end of bytes.
+
+Type: -2 Client endpoint information
+GUID,IPV4Number [IPV4 IPV4PORT]... IPv6Number [IPV6 IPV6Port]....
+
+GUID: A mesh members client GUID
+IPV4Number: unsigned byte - number of ipv4 endpoints to read.
+IPV4: The 4 address bytes
+IPV4PORT: The 2 port bytes
+
+IPV4 endpoints are repeated
+
+IPv6Number: unsigned byte - number of ipv6 endpoints to read
+IPv6: The 16 address bytes
+IPv6PORT: The 2 port bytes
+
+-3: Relay to client
+[Payload]
+Payload: The encapsulated message to deliver
+
+
+===Client->Server===
+--Type: -101 Announce local addresses and presence to server
+
+Format:
+IPV4Number [IPV4 IPV4PORT]... IPv6Number [IPV6 IPV6Port]....
+
+IPV4Number: unsigned byte - number of ipv4 endpoints to read.
+IPV4: The 4 address bytes
+IPV4PORT: The 2 port bytes
+
+IPV4 endpoints are repeated
+
+IPv6Number: unsigned byte - number of ipv6 endpoints to read
+IPv6: The 16 address bytes
+IPv6PORT: The 2 port bytes
+
+IPV6 endpoints are repeated
+
+--Type: -102 Relay through the server to another client
+GUID Payload
+Guid: Destination GUID
+Payload: The encapsulated message to deliver
+
+--Type: 103 Inform server of others heartbeat
+GUID TYPE ENDPOINT
+GUID Receiving client
+Type(byte): 4 IPv4, 6: IPv6
+ENDPOINT: The 4 or 16 bytes for the address, followed by the 2 bytes for the port number.
+
+
+===Client->Client===
+--Type: -201 - Heartbeat packets, these do the hole punching and helps clients maintain the mesh network state.
+SENDTIME
+SENDTIME: The current time
+--Type: -202 - Heartbeat response - These allow the latency and clockdifference measurements
+RECEIVETIME SENDTIME
+ReceiveTime: The time received in -201 type messages.
+Sendtime: The current time
