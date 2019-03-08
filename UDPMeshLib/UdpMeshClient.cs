@@ -22,68 +22,48 @@ namespace UDPMeshLib
         private Dictionary<Guid, UdpPeer> clients = new Dictionary<Guid, UdpPeer>();
         private Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks = new Dictionary<int, Action<byte[], Guid, IPEndPoint>>();
         private HashSet<string> contactedIPs = new HashSet<string>();
+        private Action<string> debugLog;
 
-        public UdpMeshClient(IPEndPoint serverEndpointv4, IPEndPoint serverEndpointv6, IPAddress[] myAddresses)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="T:UDPMeshLib.UdpMeshClient"/> class.
+        /// </summary>
+        /// <param name="serverEndpointv4">Mesh servers IPv4 address to connect to.</param>
+        /// <param name="serverEndpointv6">Mesh servers IPv6 address to connect to.</param>
+        /// <param name="myAddresses">List of local addresses to inform the server about for in-network meshing</param>
+        /// <param name="debugLog">Debug logging callback, leave <see langword="null"/> to disable</param>
+        public UdpMeshClient(IPEndPoint serverEndpointv4, IPEndPoint serverEndpointv6, IPAddress[] myAddresses, Action<string> debugLog)
         {
             this.me = new UdpPeer(UdpMeshCommon.GetMeshAddress());
             this.myAddresses = myAddresses;
             this.serverEndpointv4 = serverEndpointv4;
             this.serverEndpointv6 = serverEndpointv6;
+            this.debugLog = debugLog;
             callbacks[-1] = HandleServerReport;
             callbacks[-2] = HandleClientInfo;
             callbacks[-3] = HandleRelayMessage;
             callbacks[-201] = HandleHeartBeat;
             callbacks[-202] = HandleHeartBeatReply;
-            callbacks[int.MinValue] = HandleStun;
+            UdpStun.callback = HandleStun;
+
         }
 
-        private void HandleStun(byte[] inputData, Guid clientGuid, IPEndPoint iPEndPoint)
+        void HandleStun(UdpStun.StunResult result)
         {
-            if (inputData.Length < 20)
+            if (result.success)
             {
-                return;
+                receivedStun = DateTime.UtcNow.Ticks;
+                IPEndPoint endPoint = new IPEndPoint(result.remoteAddr, result.port);
+                DebugLog("Adding stun result: " + endPoint);
+                me.AddRemoteEndpoint(endPoint);
             }
-            byte[] messageShortBytes = new byte[2];
-            Array.Copy(inputData, 2, messageShortBytes, 0, 2);
-            UdpMeshCommon.FlipEndian(ref messageShortBytes);
-            int messageLength = BitConverter.ToInt16(messageShortBytes, 0);
-            byte[] messageGuidBytes = new byte[16];
-            Array.Copy(inputData, 4, messageGuidBytes, 0, 16);
-            Guid receiveGuid = new Guid(messageGuidBytes);
-            int bytesToRead = messageLength;
-            while (bytesToRead > 0)
+        }
+
+
+        private void DebugLog(string log)
+        {
+            if (debugLog != null)
             {
-                if (bytesToRead < 4)
-                {
-                    return;
-                }
-                Array.Copy(inputData, inputData.Length - bytesToRead, messageShortBytes, 0, 2);
-                UdpMeshCommon.FlipEndian(ref messageShortBytes);
-                int attrType = BitConverter.ToUInt16(messageShortBytes, 0);
-                bytesToRead -= 2;
-                Array.Copy(inputData, inputData.Length - bytesToRead, messageShortBytes, 0, 2);
-                UdpMeshCommon.FlipEndian(ref messageShortBytes);
-                int attrLength = BitConverter.ToUInt16(messageShortBytes, 0);
-                bytesToRead -= 2;
-                if (attrLength > 0)
-                {
-                    byte[] attrBytes = new byte[attrLength];
-                    Array.Copy(inputData, inputData.Length - bytesToRead, attrBytes, 0, attrLength);
-                    bytesToRead -= attrLength;
-                    if (attrType == 1 && attrBytes[1] == 1 && attrLength == 8)
-                    {
-                        Array.Copy(attrBytes, 2, messageShortBytes, 0, 2);
-                        UdpMeshCommon.FlipEndian(ref messageShortBytes);
-                        int srcPort = BitConverter.ToUInt16(messageShortBytes, 0);
-                        byte[] ipBytes = new byte[4];
-                        Array.Copy(attrBytes, 4, ipBytes, 0, 4);
-                        IPAddress srcAddr = new IPAddress(ipBytes);
-                        receivedStun = DateTime.UtcNow.Ticks;
-                        IPEndPoint stunEndpoint = new IPEndPoint(srcAddr, srcPort);
-                        Console.WriteLine("Adding stun address: " + stunEndpoint);
-                        me.AddRemoteEndpoint(stunEndpoint);
-                    }
-                }
+                debugLog(log);
             }
         }
 
@@ -312,12 +292,12 @@ namespace UDPMeshLib
                 readPos += 2;
             }
             /*
-            Console.WriteLine("Updated endpoints for " + receiveID);
+            DebugLog("Updated endpoints for " + receiveID);
             foreach (IPEndPoint endPoint in client.remoteEndpoints)
             {
-                Console.WriteLine(endPoint);
-            }
-            Console.WriteLine("===");
+                DebugLog(endPoint);
+            }1
+            DebugLog("===");
             */
         }
 
@@ -338,7 +318,7 @@ namespace UDPMeshLib
             }
             catch (Exception e)
             {
-                Console.WriteLine("Error setting up v4 socket: " + e);
+                DebugLog("Error setting up v4 socket: " + e);
                 clientSocketv4 = null;
             }
             try
@@ -347,7 +327,7 @@ namespace UDPMeshLib
             }
             catch (Exception e)
             {
-                Console.WriteLine("Error setting up v6 socket: " + e);
+                DebugLog("Error setting up v6 socket: " + e);
                 clientSocketv6 = null;
             }
             if (clientSocketv4 != null)
@@ -361,7 +341,7 @@ namespace UDPMeshLib
             if (clientSocketv4 != null)
             {
                 int v4portNumber = ((IPEndPoint)clientSocketv4.Client.LocalEndPoint).Port;
-                Console.WriteLine("Listening on port v4:" + v4portNumber);
+                DebugLog("Listening on port v4:" + v4portNumber);
                 foreach (IPAddress addr in myAddresses)
                 {
                     if (UdpMeshCommon.IsIPv4(addr))
@@ -373,7 +353,7 @@ namespace UDPMeshLib
             if (clientSocketv6 != null)
             {
                 int v6portNumber = ((IPEndPoint)clientSocketv6.Client.LocalEndPoint).Port;
-                Console.WriteLine("Listening on port v6:" + v6portNumber);
+                DebugLog("Listening on port v6:" + v6portNumber);
                 foreach (IPAddress addr in myAddresses)
                 {
                     if (UdpMeshCommon.IsIPv6(addr))
@@ -393,7 +373,8 @@ namespace UDPMeshLib
                 {
                     if (clientSocketv4 != null)
                     {
-                        UdpStun.RequestRemoteIP(clientSocketv4);
+                        UdpStun.RequestRemoteIPv4(clientSocketv4);
+                        UdpStun.RequestRemoteIPv6(clientSocketv6);
                     }
                 }
                 SendServerInfo();
@@ -431,7 +412,7 @@ namespace UDPMeshLib
                                 if (!contactedIPs.Contains(newContactString))
                                 {
                                     contactedIPs.Add(newContactString);
-                                    Console.WriteLine("Attempting new contact v4: " + newContactString);
+                                    DebugLog("Attempting new contact v4: " + newContactString);
                                 }
                                 UdpMeshCommon.Send(clientSocketv4, sendBytes, iPEndPoint);
                             }
@@ -452,7 +433,7 @@ namespace UDPMeshLib
                                 if (!contactedIPs.Contains(newContactString))
                                 {
                                     contactedIPs.Add(newContactString);
-                                    Console.WriteLine("Attempting new contact v6: " + newContactString);
+                                    DebugLog("Attempting new contact v6: " + newContactString);
                                 }
                                 UdpMeshCommon.Send(clientSocketv6, sendBytes, iPEndPoint);
                             }
@@ -498,7 +479,6 @@ namespace UDPMeshLib
             {
                 IPEndPoint receiveAddr = null;
                 byte[] receiveBytes = receiveClient.EndReceive(ar, ref receiveAddr);
-                byte[] magicBytes = UdpMeshCommon.GetMagicHeader();
                 bool process = true;
                 if (receiveBytes.Length >= 24)
                 {
@@ -510,7 +490,7 @@ namespace UDPMeshLib
                         }
                         catch (Exception e)
                         {
-                            Console.WriteLine("Error processing message: " + e);
+                            DebugLog("Error processing message: " + e);
                         }
                     }
                 }
@@ -518,7 +498,7 @@ namespace UDPMeshLib
             }
             catch (Exception e)
             {
-                Console.WriteLine("Error receiving: " + e);
+                DebugLog("Error receiving: " + e);
             }
             try
             {
@@ -526,7 +506,7 @@ namespace UDPMeshLib
             }
             catch (Exception e)
             {
-                Console.WriteLine("Error restarting receiving: " + e);
+                DebugLog("Error restarting receiving: " + e);
                 error = true;
             }
         }

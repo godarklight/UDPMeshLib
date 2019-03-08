@@ -16,12 +16,27 @@ namespace UDPMeshLib
         private bool error = false;
         private Dictionary<Guid, UdpPeer> clients = new Dictionary<Guid, UdpPeer>();
         private Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks = new Dictionary<int, Action<byte[], Guid, IPEndPoint>>();
-        public UdpMeshServer(int portNumber)
+        private Action<string> debugLog;
+        /// <summary>
+        /// Initializes a new instance of the <see cref="T:UDPMeshLib.UdpMeshServer"/> class.
+        /// </summary>
+        /// <param name="portNumber">Port number to listen on</param>
+        /// <param name="debugLog">Debug logging callback, leave <see langword="null"/> to disable</param>
+        public UdpMeshServer(int portNumber, Action<string> debugLog)
         {
             this.portNumber = portNumber;
+            this.debugLog = debugLog;
             callbacks[-101] = ClientReport;
             callbacks[-102] = RelayMessage;
             callbacks[-103] = ClientExternalReport;
+        }
+
+        public void DebugLog(string log)
+        {
+            if (debugLog != null)
+            {
+                debugLog(log);
+            }
         }
 
 

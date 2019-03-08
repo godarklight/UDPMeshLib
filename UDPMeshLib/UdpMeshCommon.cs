@@ -101,14 +101,11 @@ namespace UDPMeshLib
         private static byte[] magicBytes = UdpMeshCommon.GetMagicHeader();
         public static void ProcessBytes(byte[] inputData, IPEndPoint endpoint, Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks)
         {
-            if (inputData.Length >= 2)
+            if (inputData.Length >= 20)
             {
-                if (inputData[0] == 1 && inputData[1] == 1)
+                if (inputData[4] == 33 && inputData[5] == 18 && inputData[6] == 164 && inputData[7] == 66)
                 {
-                    if (callbacks.ContainsKey(int.MinValue))
-                    {
-                        callbacks[int.MinValue](inputData, Guid.Empty, endpoint);
-                    }
+                    UdpStun.ProcessStun(inputData);
                 }
             }
             for (int i = 0; i < magicBytes.Length; i++)

@@ -31,7 +31,7 @@ namespace UDPMesh
 
         public static void RunServer()
         {
-            UdpMeshServer udpms = new UdpMeshServer(SERVER_PORT);
+            UdpMeshServer udpms = new UdpMeshServer(SERVER_PORT, Console.WriteLine);
             udpms.Run();
             Console.ReadKey();
         }
@@ -80,7 +80,7 @@ namespace UDPMesh
             {
                 return;
             }
-            UdpMeshClient udpmc = new UdpMeshClient(new IPEndPoint(ipAddr, 6702), new IPEndPoint(ipAddr6, 6702), addresses);
+            UdpMeshClient udpmc = new UdpMeshClient(new IPEndPoint(ipAddr, 6702), new IPEndPoint(ipAddr6, 6702), addresses, Console.WriteLine);
             udpmc.RegisterCallback(0, UpdateClientTest);
             Task clientTask = udpmc.Start();
             while (true)
