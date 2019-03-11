@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+
 namespace UDPMeshLib
 {
     public class UdpMeshCommon
     {
         private static byte[] magicHeader;
+
         public static byte[] GetMagicHeader()
         {
             if (magicHeader == null)
@@ -19,6 +21,7 @@ namespace UDPMeshLib
 
         private static Guid meshAddress;
         private static byte[] meshAddressBytes;
+
         public static Guid GetMeshAddress()
         {
             if (meshAddressBytes == null)
@@ -28,6 +31,7 @@ namespace UDPMeshLib
             }
             return meshAddress;
         }
+
         public static byte[] GetMeshAddressBytes()
         {
             if (meshAddressBytes == null)
@@ -99,6 +103,7 @@ namespace UDPMeshLib
         private static byte[] tempGuidBytes = new byte[16];
         private static byte[] tempType = new byte[4];
         private static byte[] magicBytes = UdpMeshCommon.GetMagicHeader();
+
         public static void ProcessBytes(byte[] inputData, IPEndPoint endpoint, Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks)
         {
             if (inputData.Length >= 20)
@@ -139,9 +144,9 @@ namespace UDPMeshLib
                 }
             }
         }
-
         //Cant use addr.IsIPv4MappedToIPv6 - doesn't exist in lower .NET versions
         private static byte[] v4Bytes = new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255 };
+
         public static bool IsIPv4(IPAddress addr)
         {
             if (addr.AddressFamily == AddressFamily.InterNetwork)

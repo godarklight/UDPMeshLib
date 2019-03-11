@@ -82,7 +82,7 @@ namespace UDPMesh
             }
             UdpMeshClient udpmc = new UdpMeshClient(new IPEndPoint(ipAddr, 6702), new IPEndPoint(ipAddr6, 6702), addresses, Console.WriteLine);
             udpmc.RegisterCallback(0, UpdateClientTest);
-            Task clientTask = udpmc.Start();
+            Thread clientTask = udpmc.Start();
             while (true)
             {
                 Thread.Sleep(5000);

@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading.Tasks;
+using System.Threading;
 
 namespace UDPMeshLib
 {
@@ -10,13 +10,15 @@ namespace UDPMeshLib
     {
         public long CLIENT_TIMEOUT = TimeSpan.TicksPerMinute;
         private int portNumber;
-        private Task runTask;
+        private Thread runTask;
         private UdpClient serverSocketv4;
         private UdpClient serverSocketv6;
         private bool error = false;
+        private bool shutdown = false;
         private Dictionary<Guid, UdpPeer> clients = new Dictionary<Guid, UdpPeer>();
         private Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks = new Dictionary<int, Action<byte[], Guid, IPEndPoint>>();
         private Action<string> debugLog;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="T:UDPMeshLib.UdpMeshServer"/> class.
         /// </summary>
@@ -39,10 +41,9 @@ namespace UDPMeshLib
             }
         }
 
-
         public void RegisterCallback(int type, Action<byte[], Guid, IPEndPoint> callback)
         {
-            if (type > 0)
+            if (type < 0)
             {
                 throw new IndexOutOfRangeException("Implementers must use positive type numbers");
             }
@@ -52,10 +53,11 @@ namespace UDPMeshLib
         /// <summary>
         /// Runs the server async
         /// </summary>
-        public async Task Start()
+        public Thread Start()
         {
-            runTask = Task.Run(() => Run());
-            await runTask;
+            runTask = new Thread(new ThreadStart(Run));
+            runTask.Start();
+            return runTask;
         }
 
         /// <summary>
@@ -87,20 +89,20 @@ namespace UDPMeshLib
             {
                 serverSocketv4.BeginReceive(HandleReceive, serverSocketv4);
             }
-            while (serverSocketv4 != null || serverSocketv6 != null)
+            while (!error && !shutdown && (serverSocketv4 != null || serverSocketv6 != null))
             {
-                if (error)
-                {
-                    break;
-                }
                 SendClientsMeshState();
                 System.Threading.Thread.Sleep(10000);
             }
-            Shutdown();
+            if (!shutdown)
+            {
+                Shutdown();
+            }
         }
 
         private List<Guid> removeList = new List<Guid>();
         private List<byte[]> clientBytes = new List<byte[]>();
+
         private void SendClientsMeshState()
         {
             lock (clients)
@@ -158,23 +160,33 @@ namespace UDPMeshLib
             }
             catch (Exception e)
             {
-                Console.WriteLine("Error receiving: " + e);
+                if (!shutdown)
+                {
+                    Console.WriteLine("Error receiving: " + e);
+                }
+
             }
-            try
+            if (!shutdown)
             {
-                receiveClient.BeginReceive(HandleReceive, receiveClient);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("Error restarting receive: " + e);
-                error = true;
+                try
+                {
+                    receiveClient.BeginReceive(HandleReceive, receiveClient);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("Error restarting receive: " + e);
+                    error = true;
+                }
             }
         }
 
-
-
         public void Shutdown()
         {
+            if (shutdown)
+            {
+                return;
+            }
+            shutdown = true;
             if (serverSocketv4 != null)
             {
                 serverSocketv4.Close();
@@ -191,6 +203,7 @@ namespace UDPMeshLib
         private byte[] tempClientAddress4 = new byte[4];
         private byte[] tempClientAddress6 = new byte[16];
         private byte[] tempClientPort = new byte[2];
+
         private void ClientReport(byte[] inputData, Guid guid, IPEndPoint endpoint)
         {
             List<IPEndPoint> newEndpoints = new List<IPEndPoint>();
@@ -270,6 +283,7 @@ namespace UDPMeshLib
         private byte[] tempType = new byte[4];
         private byte[] tempGuid = new byte[16];
         private byte[] relayHeader = UdpMeshCommon.GetPayload(-3, null);
+
         private void RelayMessage(byte[] inputBytes, Guid client, IPEndPoint endPoint)
         {
             //A valid message must contain 2 headers (24 bytes) and a destination GUID (16 bytes)
@@ -365,6 +379,7 @@ namespace UDPMeshLib
         }
 
         private byte[] connectedGuidBytes;
+
         private byte[] GetConnectedGuidBytes()
         {
             if (connectedGuidBytes == null)

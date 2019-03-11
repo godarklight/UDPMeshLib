@@ -2,13 +2,13 @@
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading.Tasks;
+using System.Threading;
 namespace UDPMeshLib
 {
     public class UdpMeshClient
     {
         public long CLIENT_TIMEOUT = TimeSpan.TicksPerMinute;
-        private Task runTask;
+        private Thread runTask;
         private UdpClient clientSocketv4;
         private UdpClient clientSocketv6;
         private UdpPeer me;
@@ -19,6 +19,7 @@ namespace UDPMeshLib
         public bool connectedv6 = false;
         public long receivedStun;
         private bool error = false;
+        private bool shutdown = false;
         private Dictionary<Guid, UdpPeer> clients = new Dictionary<Guid, UdpPeer>();
         private Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks = new Dictionary<int, Action<byte[], Guid, IPEndPoint>>();
         private HashSet<string> contactedIPs = new HashSet<string>();
@@ -69,7 +70,7 @@ namespace UDPMeshLib
 
         public void RegisterCallback(int type, Action<byte[], Guid, IPEndPoint> callback)
         {
-            if (type > 0)
+            if (type < 0)
             {
                 throw new IndexOutOfRangeException("Implementers must use positive type numbers");
             }
@@ -304,10 +305,11 @@ namespace UDPMeshLib
         /// <summary>
         /// Runs the server async
         /// </summary>
-        public async Task Start()
+        public Thread Start()
         {
-            runTask = Task.Run(() => Run());
-            await runTask;
+            runTask = new Thread(new ThreadStart(Run));
+            runTask.Start();
+            return runTask;
         }
 
         public void Run()
@@ -362,12 +364,8 @@ namespace UDPMeshLib
                     }
                 }
             }
-            while (clientSocketv4 != null && clientSocketv6 != null)
+            while (!shutdown && !error && clientSocketv4 != null && clientSocketv6 != null)
             {
-                if (error)
-                {
-                    break;
-                }
                 //Restun every 5 minutes
                 if ((DateTime.UtcNow.Ticks - receivedStun) > (TimeSpan.TicksPerMinute * 5))
                 {
@@ -447,18 +445,25 @@ namespace UDPMeshLib
         private void SendServerInfo()
         {
             byte[] serverData = me.GetServerEndpointMessage();
-            if (serverEndpointv4.Address != IPAddress.None)
-            {
-                UdpMeshCommon.Send(clientSocketv4, serverData, serverEndpointv4);
-            }
-            if (serverEndpointv6.Address != IPAddress.None)
-            {
-                UdpMeshCommon.Send(clientSocketv6, serverData, serverEndpointv6);
-            }
+			if (serverEndpointv4 != null) {
+				if (serverEndpointv4.Address != IPAddress.None) {
+					UdpMeshCommon.Send (clientSocketv4, serverData, serverEndpointv4);
+				}
+			}
+			if (serverEndpointv6 != null) {
+				if (serverEndpointv6.Address != IPAddress.None) {
+					UdpMeshCommon.Send (clientSocketv6, serverData, serverEndpointv6);
+				}
+			}
         }
 
         public void Shutdown()
         {
+            if (shutdown)
+            {
+                return;
+            }
+            shutdown = true;
             if (clientSocketv4 != null)
             {
                 clientSocketv4.Close();
@@ -498,16 +503,23 @@ namespace UDPMeshLib
             }
             catch (Exception e)
             {
-                DebugLog("Error receiving: " + e);
+                if (!shutdown)
+                {
+                    Console.WriteLine("Error receiving: " + e);
+                }
+
             }
-            try
+            if (!shutdown)
             {
-                receiveClient.BeginReceive(HandleReceive, receiveClient);
-            }
-            catch (Exception e)
-            {
-                DebugLog("Error restarting receiving: " + e);
-                error = true;
+                try
+                {
+                    receiveClient.BeginReceive(HandleReceive, receiveClient);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("Error restarting receive: " + e);
+                    error = true;
+                }
             }
         }
 

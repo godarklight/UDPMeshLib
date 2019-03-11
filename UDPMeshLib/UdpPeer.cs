@@ -48,6 +48,7 @@ namespace UDPMeshLib
         /// </summary>
         public List<IPEndPoint> remoteEndpoints = new List<IPEndPoint>();
         private byte[] cachedData;
+
         public UdpPeer(Guid guid)
         {
             this.guid = guid;
