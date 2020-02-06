@@ -47,7 +47,10 @@ namespace UDPMeshLib
         /// The endpoints that the server knows about
         /// </summary>
         public List<IPEndPoint> remoteEndpoints = new List<IPEndPoint>();
-        private byte[] cachedData;
+        private bool cacheOK = false;
+        private byte[] cachedData = new byte[2048];
+        private byte[] cachedDataBuild = new byte[2048];
+        private int cachedDataLength;
 
         public UdpPeer(Guid guid)
         {
@@ -68,7 +71,7 @@ namespace UDPMeshLib
                 }
             }
             remoteEndpoints.Add(endPoint);
-            cachedData = null;
+            cacheOK = false;
         }
 
         /// <summary>
@@ -76,8 +79,9 @@ namespace UDPMeshLib
         /// </summary>
         internal byte[] GetServerEndpointMessage()
         {
-            if (cachedData == null)
+            if (!cacheOK)
             {
+                cacheOK = true;
                 List<IPEndPoint> v4end = new List<IPEndPoint>();
                 List<IPEndPoint> v6end = new List<IPEndPoint>();
                 foreach (IPEndPoint endPoint in remoteEndpoints)
@@ -91,33 +95,33 @@ namespace UDPMeshLib
                         v6end.Add(endPoint);
                     }
                 }
-                cachedData = new byte[2 + 6 * v4end.Count + 18 * v6end.Count];
-                cachedData[0] = (Byte)v4end.Count;
+                int cachedDataBuildLength = 2 + 6 * v4end.Count + 18 * v6end.Count;
+                cachedDataBuild[0] = (Byte)v4end.Count;
                 int writepos = 1;
                 foreach (IPEndPoint endPoint in v4end)
                 {
                     byte[] addrBytes = endPoint.Address.GetAddressBytes();
-                    Array.Copy(addrBytes, 0, cachedData, writepos, 4);
+                    Array.Copy(addrBytes, 0, cachedDataBuild, writepos, 4);
                     writepos += 4;
                     byte[] portBytes = BitConverter.GetBytes((ushort)endPoint.Port);
                     UdpMeshCommon.FlipEndian(ref portBytes);
-                    Array.Copy(portBytes, 0, cachedData, writepos, 2);
+                    Array.Copy(portBytes, 0, cachedDataBuild, writepos, 2);
                     writepos += 2;
                 }
-                cachedData[writepos] = (Byte)v6end.Count;
+                cachedDataBuild[writepos] = (Byte)v6end.Count;
                 writepos++;
                 foreach (IPEndPoint endPoint in v6end)
                 {
                     byte[] addrBytes = endPoint.Address.GetAddressBytes();
-                    Array.Copy(addrBytes, 0, cachedData, writepos, 16);
+                    Array.Copy(addrBytes, 0, cachedDataBuild, writepos, 16);
                     writepos += 16;
                     byte[] portBytes = BitConverter.GetBytes((ushort)endPoint.Port);
                     UdpMeshCommon.FlipEndian(ref portBytes);
-                    Array.Copy(portBytes, 0, cachedData, writepos, 2);
+                    Array.Copy(portBytes, 0, cachedDataBuild, writepos, 2);
                     writepos += 2;
 
                 }
-                cachedData = UdpMeshCommon.GetPayload(-101, cachedData);
+                cachedDataLength = UdpMeshCommon.GetPayload(-101, cachedDataBuild, cachedDataBuildLength, cachedData);
             }
             return cachedData;
         }
@@ -127,8 +131,9 @@ namespace UDPMeshLib
         /// </summary>
         internal byte[] GetClientEndpointMessage()
         {
-            if (cachedData == null)
+            if (!cacheOK)
             {
+                cacheOK = true;
                 List<IPEndPoint> v4end = new List<IPEndPoint>();
                 List<IPEndPoint> v6end = new List<IPEndPoint>();
                 foreach (IPEndPoint endPoint in remoteEndpoints)
@@ -142,7 +147,7 @@ namespace UDPMeshLib
                         v6end.Add(endPoint);
                     }
                 }
-                cachedData = new byte[18 + 6 * v4end.Count + 18 * v6end.Count];
+                int cachedDataBuildLength = 18 + 6 * v4end.Count + 18 * v6end.Count;
                 Array.Copy(guid.ToByteArray(), cachedData, 16);
                 cachedData[16] = (Byte)v4end.Count;
                 int writepos = 17;
@@ -169,7 +174,7 @@ namespace UDPMeshLib
                     writepos += 2;
 
                 }
-                cachedData = UdpMeshCommon.GetPayload(-2, cachedData);
+                cachedDataLength = UdpMeshCommon.GetPayload(-2, cachedDataBuild, cachedDataBuildLength, cachedData);
             }
             return cachedData;
         }

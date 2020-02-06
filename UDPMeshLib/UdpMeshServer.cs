@@ -18,6 +18,7 @@ namespace UDPMeshLib
         private Dictionary<Guid, UdpPeer> clients = new Dictionary<Guid, UdpPeer>();
         private Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks = new Dictionary<int, Action<byte[], Guid, IPEndPoint>>();
         private Action<string> debugLog;
+        private byte[] sendBuffer = new byte[2048];
 
         /// <summary>
         /// Initializes a new instance of the <see cref="T:UDPMeshLib.UdpMeshServer"/> class.
@@ -282,7 +283,7 @@ namespace UDPMeshLib
 
         private byte[] tempType = new byte[4];
         private byte[] tempGuid = new byte[16];
-        private byte[] relayHeader = UdpMeshCommon.GetPayload(-3, null);
+        private byte[] relayHeader = null;
 
         private void RelayMessage(byte[] inputBytes, Guid client, IPEndPoint endPoint)
         {
@@ -314,6 +315,11 @@ namespace UDPMeshLib
             if (peer == null)
             {
                 return;
+            }
+            if (relayHeader == null)
+            {
+                relayHeader = new byte[24];
+                UdpMeshCommon.GetPayload(-3, null, 0, relayHeader);
             }
             Array.Copy(relayHeader, 0, inputBytes, 0, 24);
             if (peer.usev6)
@@ -379,24 +385,28 @@ namespace UDPMeshLib
         }
 
         private byte[] connectedGuidBytes;
-
         private byte[] GetConnectedGuidBytes()
         {
-            if (connectedGuidBytes == null)
+            lock (sendBuffer)
             {
-                lock (clients)
+                if (connectedGuidBytes == null)
                 {
-                    connectedGuidBytes = new byte[16 * clients.Count];
-                    int writepos = 0;
-                    foreach (Guid guid in clients.Keys)
+                    lock (clients)
                     {
-                        Array.Copy(guid.ToByteArray(), 0, connectedGuidBytes, writepos, 16);
-                        writepos = writepos + 16;
+                        byte[] connectedGuidBytesBuild = new byte[16 * clients.Count];
+                        int writepos = 0;
+                        foreach (Guid guid in clients.Keys)
+                        {
+                            Array.Copy(guid.ToByteArray(), 0, connectedGuidBytesBuild, writepos, 16);
+                            writepos = writepos + 16;
+                        }
+                        int connectedGuidBytesLength = UdpMeshCommon.GetPayload(-1, connectedGuidBytesBuild, connectedGuidBytesBuild.Length, sendBuffer);
+                        connectedGuidBytes = new byte[connectedGuidBytesLength];
+                        Array.Copy(sendBuffer, 0, connectedGuidBytes, 0, connectedGuidBytesLength);
                     }
-                    connectedGuidBytes = UdpMeshCommon.GetPayload(-1, connectedGuidBytes);
                 }
+                return connectedGuidBytes;
             }
-            return connectedGuidBytes;
         }
     }
 }

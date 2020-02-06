@@ -24,6 +24,11 @@ namespace UDPMeshLib
         private Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks = new Dictionary<int, Action<byte[], Guid, IPEndPoint>>();
         private HashSet<string> contactedIPs = new HashSet<string>();
         private Action<string> debugLog;
+        private byte[] v4buffer = new byte[2048];
+        private byte[] v6buffer = new byte[2048];
+        private byte[] relayBuffer = new byte[2048];
+        private byte[] sendBuffer = new byte[2048];
+        private byte[] buildBuffer = new byte[2048];
 
         /// <summary>
         /// Initializes a new instance of the <see cref="T:UDPMeshLib.UdpMeshClient"/> class.
@@ -77,161 +82,184 @@ namespace UDPMeshLib
             callbacks[type] = callback;
         }
 
-        byte[] tempTime = new byte[8];
+        private byte[] tempTime = new byte[8];
         private void HandleHeartBeatReply(byte[] inputData, Guid clientGuid, IPEndPoint iPEndPoint)
         {
-            if (inputData.Length != 40)
-            {
-                return;
-            }
-            UdpPeer peer = GetPeer(clientGuid);
-            if (peer == null)
-            {
-                return;
-            }
             lock (tempTime)
             {
-                Array.Copy(inputData, 24, tempTime, 0, 8);
-                UdpMeshCommon.FlipEndian(ref tempTime);
-                long sendTime = BitConverter.ToInt64(tempTime, 0);
-                Array.Copy(inputData, 32, tempTime, 0, 8);
-                UdpMeshCommon.FlipEndian(ref tempTime);
-                long remoteTime = BitConverter.ToInt64(tempTime, 0);
-                long receiveTime = DateTime.UtcNow.Ticks;
-                peer.lastReceiveTime = receiveTime;
-                if (UdpMeshCommon.IsIPv4(iPEndPoint.Address))
+                if (inputData.Length != 40)
                 {
-                    peer.latency4 = receiveTime - sendTime;
-                    long expectedReceive = (peer.latency4 / 2) + sendTime;
-                    peer.offset = expectedReceive - remoteTime;
+                    return;
                 }
-                if (UdpMeshCommon.IsIPv6(iPEndPoint.Address))
+                UdpPeer peer = GetPeer(clientGuid);
+                if (peer == null)
                 {
-                    peer.latency6 = receiveTime - sendTime;
-                    long expectedReceive = (peer.latency6 / 2) + sendTime;
-                    peer.offset = expectedReceive - remoteTime;
+                    return;
                 }
-            }
-            peer.AddRemoteEndpoint(iPEndPoint);
-            if (UdpMeshCommon.IsIPv4(iPEndPoint.Address) && !peer.usev4)
-            {
-                peer.contactV4 = iPEndPoint;
-                peer.usev4 = true;
-            }
-            if (UdpMeshCommon.IsIPv6(iPEndPoint.Address) && !peer.usev6)
-            {
-                peer.contactV6 = iPEndPoint;
-                peer.usev6 = true;
+                lock (tempTime)
+                {
+                    Array.Copy(inputData, 24, tempTime, 0, 8);
+                    UdpMeshCommon.FlipEndian(ref tempTime);
+                    long sendTime = BitConverter.ToInt64(tempTime, 0);
+                    Array.Copy(inputData, 32, tempTime, 0, 8);
+                    UdpMeshCommon.FlipEndian(ref tempTime);
+                    long remoteTime = BitConverter.ToInt64(tempTime, 0);
+                    long receiveTime = DateTime.UtcNow.Ticks;
+                    peer.lastReceiveTime = receiveTime;
+                    if (UdpMeshCommon.IsIPv4(iPEndPoint.Address))
+                    {
+                        peer.latency4 = receiveTime - sendTime;
+                        long expectedReceive = (peer.latency4 / 2) + sendTime;
+                        peer.offset = expectedReceive - remoteTime;
+                    }
+                    if (UdpMeshCommon.IsIPv6(iPEndPoint.Address))
+                    {
+                        peer.latency6 = receiveTime - sendTime;
+                        long expectedReceive = (peer.latency6 / 2) + sendTime;
+                        peer.offset = expectedReceive - remoteTime;
+                    }
+                }
+                peer.AddRemoteEndpoint(iPEndPoint);
+                if (UdpMeshCommon.IsIPv4(iPEndPoint.Address) && !peer.usev4)
+                {
+                    peer.contactV4 = iPEndPoint;
+                    peer.usev4 = true;
+                }
+                if (UdpMeshCommon.IsIPv6(iPEndPoint.Address) && !peer.usev6)
+                {
+                    peer.contactV6 = iPEndPoint;
+                    peer.usev6 = true;
+                }
             }
         }
 
+        private byte[] heartbeatReplyBytes = new byte[16];
         private void HandleHeartBeat(byte[] inputData, Guid clientGuid, IPEndPoint iPEndPoint)
         {
-            if (inputData.Length != 32)
+            lock (buildBuffer)
             {
-                return;
-            }
-            UdpPeer peer = GetPeer(clientGuid);
-            if (peer == null)
-            {
-                return;
-            }
-            peer.lastReceiveTime = DateTime.UtcNow.Ticks;
-            byte[] replyBytes = new byte[16];
-            byte[] currentTime = BitConverter.GetBytes(DateTime.UtcNow.Ticks);
-            UdpMeshCommon.FlipEndian(ref currentTime);
-            Array.Copy(inputData, 24, replyBytes, 0, 8);
-            Array.Copy(currentTime, 0, replyBytes, 8, 8);
-            byte[] replyMessage = UdpMeshCommon.GetPayload(-202, replyBytes);
-            if (UdpMeshCommon.IsIPv4(iPEndPoint.Address))
-            {
-                UdpMeshCommon.Send(clientSocketv4, replyMessage, iPEndPoint);
-                if (!peer.usev4)
+                lock (sendBuffer)
                 {
-                    byte[] notifyServerOfEndpoint = new byte[23];
-                    Array.Copy(clientGuid.ToByteArray(), 0, notifyServerOfEndpoint, 0, 16);
-                    notifyServerOfEndpoint[16] = 4;
-                    byte[] endpointBytes = iPEndPoint.Address.GetAddressBytes();
-                    if (endpointBytes.Length == 4)
+                    if (inputData.Length != 32)
                     {
-                        Array.Copy(endpointBytes, 0, notifyServerOfEndpoint, 17, 4);
+                        return;
                     }
-                    if (endpointBytes.Length == 16)
+                    UdpPeer peer = GetPeer(clientGuid);
+                    if (peer == null)
                     {
-                        Array.Copy(endpointBytes, 12, notifyServerOfEndpoint, 17, 4);
+                        return;
                     }
-                    byte[] portBytes = BitConverter.GetBytes((UInt16)iPEndPoint.Port);
-                    UdpMeshCommon.FlipEndian(ref portBytes);
-                    Array.Copy(portBytes, 0, notifyServerOfEndpoint, 21, 2);
-                    byte[] notifyServerOfEndpointPayload = UdpMeshCommon.GetPayload(-103, notifyServerOfEndpoint);
-                    UdpMeshCommon.Send(clientSocketv4, notifyServerOfEndpointPayload, serverEndpointv4);
-                }
-            }
-            if (UdpMeshCommon.IsIPv6(iPEndPoint.Address))
-            {
-                UdpMeshCommon.Send(clientSocketv6, replyMessage, iPEndPoint);
-                if (!peer.usev6)
-                {
-                    byte[] notifyServerOfEndpoint = new byte[35];
-                    Array.Copy(clientGuid.ToByteArray(), 0, notifyServerOfEndpoint, 0, 16);
-                    notifyServerOfEndpoint[16] = 6;
-                    byte[] endpointBytes = iPEndPoint.Address.GetAddressBytes();
-                    Array.Copy(endpointBytes, 0, notifyServerOfEndpoint, 17, 16);
-                    byte[] portBytes = BitConverter.GetBytes((UInt16)iPEndPoint.Port);
-                    UdpMeshCommon.FlipEndian(ref portBytes);
-                    Array.Copy(portBytes, 0, notifyServerOfEndpoint, 33, 2);
-                    byte[] notifyServerOfEndpointPayload = UdpMeshCommon.GetPayload(-103, notifyServerOfEndpoint);
-                    UdpMeshCommon.Send(clientSocketv6, notifyServerOfEndpointPayload, serverEndpointv6);
+                    peer.lastReceiveTime = DateTime.UtcNow.Ticks;
+                    byte[] currentTime = BitConverter.GetBytes(DateTime.UtcNow.Ticks);
+                    UdpMeshCommon.FlipEndian(ref currentTime);
+                    Array.Copy(inputData, 24, heartbeatReplyBytes, 0, 8);
+                    Array.Copy(currentTime, 0, heartbeatReplyBytes, 8, 8);
+                    int length = UdpMeshCommon.GetPayload(-202, heartbeatReplyBytes, heartbeatReplyBytes.Length, sendBuffer);
+                    if (UdpMeshCommon.IsIPv4(iPEndPoint.Address))
+                    {
+                        UdpMeshCommon.Send(clientSocketv4, sendBuffer, length, iPEndPoint);
+                    }
+                    if (UdpMeshCommon.IsIPv6(iPEndPoint.Address))
+                    {
+                        UdpMeshCommon.Send(clientSocketv6, sendBuffer, length, iPEndPoint);
+                    }
+                    if (UdpMeshCommon.IsIPv4(iPEndPoint.Address))
+                    {
+                        if (!peer.usev4)
+                        {
+                            Array.Copy(clientGuid.ToByteArray(), 0, buildBuffer, 0, 16);
+                            buildBuffer[16] = 4;
+                            byte[] endpointBytes = iPEndPoint.Address.GetAddressBytes();
+                            if (endpointBytes.Length == 4)
+                            {
+                                Array.Copy(endpointBytes, 0, buildBuffer, 17, 4);
+                            }
+                            if (endpointBytes.Length == 16)
+                            {
+                                Array.Copy(endpointBytes, 12, buildBuffer, 17, 4);
+                            }
+                            byte[] portBytes = BitConverter.GetBytes((UInt16)iPEndPoint.Port);
+                            UdpMeshCommon.FlipEndian(ref portBytes);
+                            Array.Copy(portBytes, 0, buildBuffer, 21, 2);
+                            int sendLength = UdpMeshCommon.GetPayload(-103, buildBuffer, 25, sendBuffer);
+                            UdpMeshCommon.Send(clientSocketv4, sendBuffer, sendLength, serverEndpointv4);
+                        }
+                    }
+                    if (UdpMeshCommon.IsIPv6(iPEndPoint.Address))
+                    {
+                        if (!peer.usev6)
+                        {
+                            Array.Copy(clientGuid.ToByteArray(), 0, buildBuffer, 0, 16);
+                            buildBuffer[16] = 6;
+                            byte[] endpointBytes = iPEndPoint.Address.GetAddressBytes();
+                            Array.Copy(endpointBytes, 0, buildBuffer, 17, 16);
+                            byte[] portBytes = BitConverter.GetBytes((UInt16)iPEndPoint.Port);
+                            UdpMeshCommon.FlipEndian(ref portBytes);
+                            Array.Copy(portBytes, 0, buildBuffer, 33, 2);
+                            int sendLength = UdpMeshCommon.GetPayload(-103, buildBuffer, 35, sendBuffer);
+                            UdpMeshCommon.Send(clientSocketv6, sendBuffer, sendLength, serverEndpointv6);
+                        }
+                    }
                 }
             }
         }
 
         private void HandleRelayMessage(byte[] inputData, Guid serverGuid, IPEndPoint endPoint)
         {
-            if (inputData.Length < 64)
+            lock (relayBuffer)
             {
-                return;
+                if (inputData.Length < 64)
+                {
+                    return;
+                }
+                byte[] relayData = relayBuffer;
+                if (!UdpMeshCommon.USE_BUFFERS)
+                {
+                    relayData = new byte[inputData.Length - 40];
+                }
+                Array.Copy(inputData, 0, relayData, 0, inputData.Length);
+                UdpMeshCommon.ProcessBytes(relayData, null, callbacks);
             }
-            byte[] cropMessage = new byte[inputData.Length - 40];
-            Array.Copy(inputData, 40, cropMessage, 0, cropMessage.Length);
-            UdpMeshCommon.ProcessBytes(cropMessage, null, callbacks);
         }
 
         private List<Guid> removeGuids = new List<Guid>();
+        byte[] guidData = new byte[16];
         private void HandleServerReport(byte[] inputData, Guid serverGuid, IPEndPoint serverEndpoint)
         {
-            if (UdpMeshCommon.IsIPv4(serverEndpoint.Address))
+            lock (guidData)
             {
-                connectedv4 = true;
-            }
-            if (UdpMeshCommon.IsIPv6(serverEndpoint.Address))
-            {
-                connectedv6 = true;
-            }
-            int readPos = 24;
-            byte[] guidData = new byte[16];
-            lock (clients)
-            {
-                removeGuids.AddRange(clients.Keys);
-                while (inputData.Length - readPos >= 16)
+                if (UdpMeshCommon.IsIPv4(serverEndpoint.Address))
                 {
-                    Array.Copy(inputData, readPos, guidData, 0, 16);
-                    readPos += 16;
-                    Guid newGuid = new Guid(guidData);
-                    if (!clients.ContainsKey(newGuid))
-                    {
-                        clients.Add(newGuid, new UdpPeer(newGuid));
-                    }
-                    if (removeGuids.Contains(newGuid))
-                    {
-                        removeGuids.Remove(newGuid);
-                    }
+                    connectedv4 = true;
                 }
-                foreach (Guid guid in removeGuids)
+                if (UdpMeshCommon.IsIPv6(serverEndpoint.Address))
                 {
-                    clients.Remove(guid);
+                    connectedv6 = true;
                 }
-                removeGuids.Clear();
+                int readPos = 24;
+                lock (clients)
+                {
+                    removeGuids.AddRange(clients.Keys);
+                    while (inputData.Length - readPos >= 16)
+                    {
+                        Array.Copy(inputData, readPos, guidData, 0, 16);
+                        readPos += 16;
+                        Guid newGuid = new Guid(guidData);
+                        if (!clients.ContainsKey(newGuid))
+                        {
+                            clients.Add(newGuid, new UdpPeer(newGuid));
+                        }
+                        if (removeGuids.Contains(newGuid))
+                        {
+                            removeGuids.Remove(newGuid);
+                        }
+                    }
+                    foreach (Guid guid in removeGuids)
+                    {
+                        clients.Remove(guid);
+                    }
+                    removeGuids.Clear();
+                }
             }
         }
 
@@ -240,66 +268,52 @@ namespace UDPMeshLib
         private byte[] tempClientPort = new byte[2];
         private void HandleClientInfo(byte[] inputData, Guid serverGuid, IPEndPoint serverEndpoint)
         {
-            int readPos = 24;
-            if (inputData.Length - readPos < 17)
+            lock (guidData)
             {
-                return;
-            }
-            byte[] guidData = new byte[16];
-            Array.Copy(inputData, readPos, guidData, 0, 16);
-            Guid receiveID = new Guid(guidData);
-            if (!clients.ContainsKey(receiveID))
-            {
-                clients.Add(receiveID, new UdpPeer(receiveID));
-            }
-            UdpPeer client = clients[receiveID];
-            readPos += 16;
-            int v4Num = inputData[readPos];
-            readPos++;
-            for (int i = 0; i < v4Num; i++)
-            {
-                if (inputData.Length - readPos < 6)
+                int readPos = 24;
+                if (inputData.Length - readPos < 17)
                 {
                     return;
                 }
-                Array.Copy(inputData, readPos, tempClientAddress4, 0, 4);
-                IPAddress ip = new IPAddress(tempClientAddress4);
-                readPos += 4;
-                Array.Copy(inputData, readPos, tempClientPort, 0, 2);
-                UdpMeshCommon.FlipEndian(ref tempClientPort);
-                int port = BitConverter.ToUInt16(tempClientPort, 0);
-                client.AddRemoteEndpoint(new IPEndPoint(ip, port));
-                readPos += 2;
-            }
-            if (inputData.Length - readPos < 1)
-            {
-                return;
-            }
-            int v6Num = inputData[readPos];
-            readPos++;
-            for (int i = 0; i < v6Num; i++)
-            {
-                if (inputData.Length - readPos < 18)
+                Array.Copy(inputData, readPos, guidData, 0, 16);
+                Guid receiveID = new Guid(guidData);
+                if (!clients.ContainsKey(receiveID))
                 {
-                    return;
+                    clients.Add(receiveID, new UdpPeer(receiveID));
                 }
-                Array.Copy(inputData, readPos, tempClientAddress6, 0, 16);
-                IPAddress ip = new IPAddress(tempClientAddress6);
+                UdpPeer client = clients[receiveID];
                 readPos += 16;
-                Array.Copy(inputData, readPos, tempClientPort, 0, 2);
-                UdpMeshCommon.FlipEndian(ref tempClientPort);
-                int port = BitConverter.ToUInt16(tempClientPort, 0);
-                client.AddRemoteEndpoint(new IPEndPoint(ip, port));
-                readPos += 2;
+                int v4Num = inputData[readPos];
+                readPos++;
+                for (int i = 0; i < v4Num; i++)
+                {
+                    Array.Copy(inputData, readPos, tempClientAddress4, 0, 4);
+                    IPAddress ip = new IPAddress(tempClientAddress4);
+                    readPos += 4;
+                    Array.Copy(inputData, readPos, tempClientPort, 0, 2);
+                    UdpMeshCommon.FlipEndian(ref tempClientPort);
+                    int port = BitConverter.ToUInt16(tempClientPort, 0);
+                    client.AddRemoteEndpoint(new IPEndPoint(ip, port));
+                    readPos += 2;
+                }
+                if (inputData.Length - readPos < 1)
+                {
+                    return;
+                }
+                int v6Num = inputData[readPos];
+                readPos++;
+                for (int i = 0; i < v6Num; i++)
+                {
+                    Array.Copy(inputData, readPos, tempClientAddress6, 0, 16);
+                    IPAddress ip = new IPAddress(tempClientAddress6);
+                    readPos += 16;
+                    Array.Copy(inputData, readPos, tempClientPort, 0, 2);
+                    UdpMeshCommon.FlipEndian(ref tempClientPort);
+                    int port = BitConverter.ToUInt16(tempClientPort, 0);
+                    client.AddRemoteEndpoint(new IPEndPoint(ip, port));
+                    readPos += 2;
+                }
             }
-            /*
-            DebugLog("Updated endpoints for " + receiveID);
-            foreach (IPEndPoint endPoint in client.remoteEndpoints)
-            {
-                DebugLog(endPoint);
-            }1
-            DebugLog("===");
-            */
         }
 
         /// <summary>
@@ -331,14 +345,6 @@ namespace UDPMeshLib
             {
                 DebugLog("Error setting up v6 socket: " + e);
                 clientSocketv6 = null;
-            }
-            if (clientSocketv4 != null)
-            {
-                clientSocketv4.BeginReceive(HandleReceive, clientSocketv4);
-            }
-            if (clientSocketv6 != null)
-            {
-                clientSocketv6.BeginReceive(HandleReceive, clientSocketv6);
             }
             if (clientSocketv4 != null)
             {
@@ -375,6 +381,14 @@ namespace UDPMeshLib
                         UdpStun.RequestRemoteIPv6(clientSocketv6);
                     }
                 }
+                if (clientSocketv4 != null)
+                {
+                    HandleReceive(clientSocketv4, v4buffer);
+                }
+                if (clientSocketv6 != null)
+                {
+                    HandleReceive(clientSocketv6, v6buffer);
+                }
                 SendServerInfo();
                 SendClientsHello();
                 System.Threading.Thread.Sleep(10000);
@@ -384,60 +398,62 @@ namespace UDPMeshLib
 
         private void SendClientsHello()
         {
-            byte[] timeBytes = BitConverter.GetBytes(DateTime.UtcNow.Ticks);
-            UdpMeshCommon.FlipEndian(ref timeBytes);
-            byte[] sendBytes = UdpMeshCommon.GetPayload(-201, timeBytes);
-            lock (clients)
+            lock (sendBuffer)
             {
-                foreach (UdpPeer peer in clients.Values)
+                byte[] timeBytes = BitConverter.GetBytes(DateTime.UtcNow.Ticks);
+                UdpMeshCommon.FlipEndian(ref timeBytes);
+                int sendBufferLength = UdpMeshCommon.GetPayload(-201, timeBytes, timeBytes.Length, sendBuffer);
+                lock (clients)
                 {
-                    if (peer.guid == UdpMeshCommon.GetMeshAddress())
+                    foreach (UdpPeer peer in clients.Values)
                     {
-                        continue;
-                    }
-                    //Send to ipv4
-                    if (peer.usev4)
-                    {
-                        UdpMeshCommon.Send(clientSocketv4, sendBytes, peer.contactV4);
-                    }
-                    else
-                    {
-                        foreach (IPEndPoint iPEndPoint in peer.remoteEndpoints)
+                        if (peer.guid == UdpMeshCommon.GetMeshAddress())
                         {
-                            if (UdpMeshCommon.IsIPv4(iPEndPoint.Address))
+                            continue;
+                        }
+                        //Send to ipv4
+                        if (peer.usev4)
+                        {
+                            UdpMeshCommon.Send(clientSocketv4, sendBuffer, sendBufferLength, peer.contactV4);
+                        }
+                        else
+                        {
+                            foreach (IPEndPoint iPEndPoint in peer.remoteEndpoints)
                             {
-                                string newContactString = iPEndPoint.ToString();
-                                if (!contactedIPs.Contains(newContactString))
+                                if (UdpMeshCommon.IsIPv4(iPEndPoint.Address))
                                 {
-                                    contactedIPs.Add(newContactString);
-                                    DebugLog("Attempting new contact v4: " + newContactString);
+                                    string newContactString = iPEndPoint.ToString();
+                                    if (!contactedIPs.Contains(newContactString))
+                                    {
+                                        contactedIPs.Add(newContactString);
+                                        DebugLog("Attempting new contact v4: " + newContactString);
+                                    }
+                                    UdpMeshCommon.Send(clientSocketv4, sendBuffer, sendBufferLength, iPEndPoint);
                                 }
-                                UdpMeshCommon.Send(clientSocketv4, sendBytes, iPEndPoint);
+                            }
+                        }
+                        //Send to ipv6
+                        if (peer.usev6)
+                        {
+                            UdpMeshCommon.Send(clientSocketv6, sendBuffer, sendBufferLength, peer.contactV6);
+                        }
+                        else
+                        {
+                            foreach (IPEndPoint iPEndPoint in peer.remoteEndpoints)
+                            {
+                                if (UdpMeshCommon.IsIPv6(iPEndPoint.Address))
+                                {
+                                    string newContactString = iPEndPoint.ToString();
+                                    if (!contactedIPs.Contains(newContactString))
+                                    {
+                                        contactedIPs.Add(newContactString);
+                                        DebugLog("Attempting new contact v6: " + newContactString);
+                                    }
+                                    UdpMeshCommon.Send(clientSocketv6, sendBuffer, sendBufferLength, iPEndPoint);
+                                }
                             }
                         }
                     }
-                    //Send to ipv6
-                    if (peer.usev6)
-                    {
-                        UdpMeshCommon.Send(clientSocketv6, sendBytes, peer.contactV6);
-                    }
-                    else
-                    {
-                        foreach (IPEndPoint iPEndPoint in peer.remoteEndpoints)
-                        {
-                            if (UdpMeshCommon.IsIPv6(iPEndPoint.Address))
-                            {
-                                string newContactString = iPEndPoint.ToString();
-                                if (!contactedIPs.Contains(newContactString))
-                                {
-                                    contactedIPs.Add(newContactString);
-                                    DebugLog("Attempting new contact v6: " + newContactString);
-                                }
-                                UdpMeshCommon.Send(clientSocketv6, sendBytes, iPEndPoint);
-                            }
-                        }
-                    }
-
                 }
             }
         }
@@ -445,16 +461,20 @@ namespace UDPMeshLib
         private void SendServerInfo()
         {
             byte[] serverData = me.GetServerEndpointMessage();
-			if (serverEndpointv4 != null) {
-				if (serverEndpointv4.Address != IPAddress.None) {
-					UdpMeshCommon.Send (clientSocketv4, serverData, serverEndpointv4);
-				}
-			}
-			if (serverEndpointv6 != null) {
-				if (serverEndpointv6.Address != IPAddress.None) {
-					UdpMeshCommon.Send (clientSocketv6, serverData, serverEndpointv6);
-				}
-			}
+            if (serverEndpointv4 != null)
+            {
+                if (serverEndpointv4.Address != IPAddress.None)
+                {
+                    UdpMeshCommon.Send(clientSocketv4, serverData, serverEndpointv4);
+                }
+            }
+            if (serverEndpointv6 != null)
+            {
+                if (serverEndpointv6.Address != IPAddress.None)
+                {
+                    UdpMeshCommon.Send(clientSocketv6, serverData, serverEndpointv6);
+                }
+            }
         }
 
         public void Shutdown()
@@ -477,21 +497,31 @@ namespace UDPMeshLib
             runTask = null;
         }
 
-        private void HandleReceive(IAsyncResult ar)
+        private void HandleReceive(UdpClient receiveClient, byte[] buffer)
         {
-            UdpClient receiveClient = (UdpClient)ar.AsyncState;
             try
             {
-                IPEndPoint receiveAddr = null;
-                byte[] receiveBytes = receiveClient.EndReceive(ar, ref receiveAddr);
+                if (receiveClient.Client.Available == 0)
+                {
+                    return;
+                }
+                byte[] processBytes = buffer;
+                EndPoint receiveAddrEndpoint = null;
+                int bytesRead = receiveClient.Client.ReceiveFrom(buffer, ref receiveAddrEndpoint);
+                IPEndPoint receiveAddr = (IPEndPoint)receiveAddrEndpoint;
                 bool process = true;
-                if (receiveBytes.Length >= 24)
+                if (bytesRead >= 24)
                 {
                     if (process)
                     {
                         try
                         {
-                            UdpMeshCommon.ProcessBytes(receiveBytes, receiveAddr, callbacks);
+                            if (!UdpMeshCommon.USE_BUFFERS)
+                            {
+                                processBytes = new byte[bytesRead];
+                                Array.Copy(buffer, 0, processBytes, 0, bytesRead);
+                            }
+                            UdpMeshCommon.ProcessBytes(processBytes, receiveAddr, callbacks);
                         }
                         catch (Exception e)
                         {
@@ -508,18 +538,6 @@ namespace UDPMeshLib
                     Console.WriteLine("Error receiving: " + e);
                 }
 
-            }
-            if (!shutdown)
-            {
-                try
-                {
-                    receiveClient.BeginReceive(HandleReceive, receiveClient);
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine("Error restarting receive: " + e);
-                    error = true;
-                }
             }
         }
 
@@ -543,55 +561,70 @@ namespace UDPMeshLib
             return peer;
         }
 
-        byte[] relayHeader = UdpMeshCommon.GetPayload(-102, null);
+        byte[] relayHeader;
         public void SendMessageToClient(Guid clientGuid, int type, byte[] data)
         {
-            if (type < 0)
+            SendMessageToClient(clientGuid, type, data, data.Length);
+        }
+
+        public void SendMessageToClient(Guid clientGuid, int type, byte[] data, int length)
+        {
+            lock (sendBuffer)
             {
-                throw new IndexOutOfRangeException("Implementers must use positive ID's");
-            }
-            UdpPeer peer = GetPeer(clientGuid);
-            if (peer == null)
-            {
-                return;
-            }
-            byte[] sendBytes = UdpMeshCommon.GetPayload(type, data);
-            if (peer.usev4 && peer.usev6 && clientSocketv4 != null && clientSocketv6 != null)
-            {
-                if (peer.latency4 < peer.latency6)
+                if (type < 0)
                 {
-                    UdpMeshCommon.Send(clientSocketv4, sendBytes, peer.contactV4);
+                    throw new IndexOutOfRangeException("Implementers must use positive ID's");
                 }
-                else
+                UdpPeer peer = GetPeer(clientGuid);
+                if (peer == null)
                 {
-                    UdpMeshCommon.Send(clientSocketv6, sendBytes, peer.contactV6);
+                    return;
                 }
-                return;
-            }
-            if (peer.usev6 && clientSocketv6 != null)
-            {
-                UdpMeshCommon.Send(clientSocketv6, sendBytes, peer.contactV6);
-                return;
-            }
-            if (peer.usev4 && clientSocketv4 != null)
-            {
-                UdpMeshCommon.Send(clientSocketv4, sendBytes, peer.contactV4);
-                return;
-            }
-            byte[] relayBytes = new byte[40 + sendBytes.Length];
-            Array.Copy(relayHeader, 0, relayBytes, 0, relayHeader.Length);
-            byte[] destination = clientGuid.ToByteArray();
-            Array.Copy(destination, 0, relayBytes, 24, 16);
-            Array.Copy(sendBytes, 0, relayBytes, 40, sendBytes.Length);
-            if (connectedv6 && clientSocketv6 != null)
-            {
-                UdpMeshCommon.Send(clientSocketv6, relayBytes, serverEndpointv6);
-                return;
-            }
-            if (connectedv4 && clientSocketv4 != null)
-            {
-                UdpMeshCommon.Send(clientSocketv4, relayBytes, serverEndpointv4);
-                return;
+                int sendBufferLength = UdpMeshCommon.GetPayload(type, data, length, sendBuffer);
+                if (peer.usev4 && peer.usev6 && clientSocketv4 != null && clientSocketv6 != null)
+                {
+                    if (peer.latency4 < peer.latency6)
+                    {
+                        UdpMeshCommon.Send(clientSocketv4, sendBuffer, sendBufferLength, peer.contactV4);
+                    }
+                    else
+                    {
+                        UdpMeshCommon.Send(clientSocketv6, sendBuffer, sendBufferLength, peer.contactV6);
+                    }
+                    return;
+                }
+                if (peer.usev6 && clientSocketv6 != null)
+                {
+                    UdpMeshCommon.Send(clientSocketv6, sendBuffer, sendBufferLength, peer.contactV6);
+                    return;
+                }
+                if (peer.usev4 && clientSocketv4 != null)
+                {
+                    UdpMeshCommon.Send(clientSocketv4, sendBuffer, sendBufferLength, peer.contactV4);
+                    return;
+                }
+                int relayBufferLength = 40 + sendBufferLength;
+                //Initialise header if this is the first run, we can use the relayBuffer as it is still free.
+                if (relayHeader == null)
+                {
+                    int relayHeaderLength = UdpMeshCommon.GetPayload(-102, null, 0, relayBuffer);
+                    relayHeader = new byte[relayHeaderLength];
+                    Array.Copy(relayBuffer, 0, relayHeader, 0, relayHeaderLength);
+                }
+                Array.Copy(relayHeader, 0, relayBuffer, 0, relayHeader.Length);
+                byte[] destination = clientGuid.ToByteArray();
+                Array.Copy(destination, 0, relayBuffer, 24, 16);
+                Array.Copy(sendBuffer, 0, relayBuffer, 40, sendBufferLength);
+                if (connectedv6 && clientSocketv6 != null)
+                {
+                    UdpMeshCommon.Send(clientSocketv6, relayBuffer, relayBufferLength, serverEndpointv6);
+                    return;
+                }
+                if (connectedv4 && clientSocketv4 != null)
+                {
+                    UdpMeshCommon.Send(clientSocketv4, relayBuffer, relayBufferLength, serverEndpointv4);
+                    return;
+                }
             }
         }
     }
