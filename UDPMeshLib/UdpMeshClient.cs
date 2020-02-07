@@ -18,10 +18,11 @@ namespace UDPMeshLib
         public bool connectedv4 = false;
         public bool connectedv6 = false;
         public long receivedStun;
+        public long sendServerInfo;
         private bool error = false;
         private bool shutdown = false;
         private Dictionary<Guid, UdpPeer> clients = new Dictionary<Guid, UdpPeer>();
-        private Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks = new Dictionary<int, Action<byte[], Guid, IPEndPoint>>();
+        private Dictionary<int, Action<byte[], int, Guid, IPEndPoint>> callbacks = new Dictionary<int, Action<byte[], int, Guid, IPEndPoint>>();
         private HashSet<string> contactedIPs = new HashSet<string>();
         private Action<string> debugLog;
         private byte[] v4buffer = new byte[2048];
@@ -29,6 +30,8 @@ namespace UDPMeshLib
         private byte[] relayBuffer = new byte[2048];
         private byte[] sendBuffer = new byte[2048];
         private byte[] buildBuffer = new byte[2048];
+        private IPEndPoint anyV4 = new IPEndPoint(IPAddress.Any, 0);
+        private IPEndPoint anyV6 = new IPEndPoint(IPAddress.IPv6Any, 0);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="T:UDPMeshLib.UdpMeshClient"/> class.
@@ -73,7 +76,7 @@ namespace UDPMeshLib
             }
         }
 
-        public void RegisterCallback(int type, Action<byte[], Guid, IPEndPoint> callback)
+        public void RegisterCallback(int type, Action<byte[], int, Guid, IPEndPoint> callback)
         {
             if (type < 0)
             {
@@ -83,11 +86,11 @@ namespace UDPMeshLib
         }
 
         private byte[] tempTime = new byte[8];
-        private void HandleHeartBeatReply(byte[] inputData, Guid clientGuid, IPEndPoint iPEndPoint)
+        private void HandleHeartBeatReply(byte[] inputData, int inputDataLength, Guid clientGuid, IPEndPoint iPEndPoint)
         {
             lock (tempTime)
             {
-                if (inputData.Length != 40)
+                if (inputDataLength != 40)
                 {
                     return;
                 }
@@ -134,13 +137,13 @@ namespace UDPMeshLib
         }
 
         private byte[] heartbeatReplyBytes = new byte[16];
-        private void HandleHeartBeat(byte[] inputData, Guid clientGuid, IPEndPoint iPEndPoint)
+        private void HandleHeartBeat(byte[] inputData, int inputDataLength, Guid clientGuid, IPEndPoint iPEndPoint)
         {
             lock (buildBuffer)
             {
                 lock (sendBuffer)
                 {
-                    if (inputData.Length != 32)
+                    if (inputDataLength != 32)
                     {
                         return;
                     }
@@ -204,27 +207,27 @@ namespace UDPMeshLib
             }
         }
 
-        private void HandleRelayMessage(byte[] inputData, Guid serverGuid, IPEndPoint endPoint)
+        private void HandleRelayMessage(byte[] inputData, int inputDataLength, Guid serverGuid, IPEndPoint endPoint)
         {
             lock (relayBuffer)
             {
-                if (inputData.Length < 64)
+                if (inputDataLength < 64)
                 {
                     return;
                 }
                 byte[] relayData = relayBuffer;
                 if (!UdpMeshCommon.USE_BUFFERS)
                 {
-                    relayData = new byte[inputData.Length - 40];
+                    relayData = new byte[inputDataLength - 40];
                 }
-                Array.Copy(inputData, 0, relayData, 0, inputData.Length);
-                UdpMeshCommon.ProcessBytes(relayData, null, callbacks);
+                Array.Copy(inputData, 0, relayData, 0, inputDataLength - 40);
+                UdpMeshCommon.ProcessBytes(relayData, inputDataLength - 40, null, callbacks);
             }
         }
 
         private List<Guid> removeGuids = new List<Guid>();
         byte[] guidData = new byte[16];
-        private void HandleServerReport(byte[] inputData, Guid serverGuid, IPEndPoint serverEndpoint)
+        private void HandleServerReport(byte[] inputData, int inputDataLength, Guid serverGuid, IPEndPoint serverEndpoint)
         {
             lock (guidData)
             {
@@ -240,7 +243,7 @@ namespace UDPMeshLib
                 lock (clients)
                 {
                     removeGuids.AddRange(clients.Keys);
-                    while (inputData.Length - readPos >= 16)
+                    while (inputDataLength - readPos >= 16)
                     {
                         Array.Copy(inputData, readPos, guidData, 0, 16);
                         readPos += 16;
@@ -266,12 +269,12 @@ namespace UDPMeshLib
         private byte[] tempClientAddress4 = new byte[4];
         private byte[] tempClientAddress6 = new byte[16];
         private byte[] tempClientPort = new byte[2];
-        private void HandleClientInfo(byte[] inputData, Guid serverGuid, IPEndPoint serverEndpoint)
+        private void HandleClientInfo(byte[] inputData, int inputDataLength, Guid serverGuid, IPEndPoint serverEndpoint)
         {
             lock (guidData)
             {
                 int readPos = 24;
-                if (inputData.Length - readPos < 17)
+                if (inputDataLength - readPos < 17)
                 {
                     return;
                 }
@@ -296,7 +299,7 @@ namespace UDPMeshLib
                     client.AddRemoteEndpoint(new IPEndPoint(ip, port));
                     readPos += 2;
                 }
-                if (inputData.Length - readPos < 1)
+                if (inputDataLength - readPos < 1)
                 {
                     return;
                 }
@@ -372,26 +375,33 @@ namespace UDPMeshLib
             }
             while (!shutdown && !error && clientSocketv4 != null && clientSocketv6 != null)
             {
-                //Restun every 5 minutes
-                if ((DateTime.UtcNow.Ticks - receivedStun) > (TimeSpan.TicksPerMinute * 5))
+                if ((DateTime.UtcNow.Ticks - sendServerInfo) > (TimeSpan.TicksPerSecond * 10))
                 {
-                    if (clientSocketv4 != null)
+                    sendServerInfo = DateTime.UtcNow.Ticks;
+                    if (clientSocketv4 != null || clientSocketv6 != null)
                     {
-                        UdpStun.RequestRemoteIPv4(clientSocketv4);
-                        UdpStun.RequestRemoteIPv6(clientSocketv6);
+                        SendServerInfo();
+                        SendClientsHello();
+                    }
+                    //Restun every 5 minutes
+                    if ((DateTime.UtcNow.Ticks - receivedStun) > (TimeSpan.TicksPerMinute * 5))
+                    {
+                        if (clientSocketv4 != null)
+                        {
+                            UdpStun.RequestRemoteIPv4(clientSocketv4);
+                            UdpStun.RequestRemoteIPv6(clientSocketv6);
+                        }
                     }
                 }
                 if (clientSocketv4 != null)
                 {
-                    HandleReceive(clientSocketv4, v4buffer);
+                    HandleReceive(clientSocketv4, false);
                 }
                 if (clientSocketv6 != null)
                 {
-                    HandleReceive(clientSocketv6, v6buffer);
+                    HandleReceive(clientSocketv6, true);
                 }
-                SendServerInfo();
-                SendClientsHello();
-                System.Threading.Thread.Sleep(10000);
+                Thread.Sleep(1);
             }
             Shutdown();
         }
@@ -461,18 +471,19 @@ namespace UDPMeshLib
         private void SendServerInfo()
         {
             byte[] serverData = me.GetServerEndpointMessage();
+            int serverDataLength = me.GetEndpointMessageLength();
             if (serverEndpointv4 != null)
             {
                 if (serverEndpointv4.Address != IPAddress.None)
                 {
-                    UdpMeshCommon.Send(clientSocketv4, serverData, serverEndpointv4);
+                    UdpMeshCommon.Send(clientSocketv4, serverData, serverDataLength, serverEndpointv4);
                 }
             }
             if (serverEndpointv6 != null)
             {
                 if (serverEndpointv6.Address != IPAddress.None)
                 {
-                    UdpMeshCommon.Send(clientSocketv6, serverData, serverEndpointv6);
+                    UdpMeshCommon.Send(clientSocketv6, serverData, serverDataLength, serverEndpointv6);
                 }
             }
         }
@@ -497,7 +508,7 @@ namespace UDPMeshLib
             runTask = null;
         }
 
-        private void HandleReceive(UdpClient receiveClient, byte[] buffer)
+        private void HandleReceive(UdpClient receiveClient, bool isv6)
         {
             try
             {
@@ -505,8 +516,14 @@ namespace UDPMeshLib
                 {
                     return;
                 }
+                byte[] buffer = v4buffer;
+                EndPoint receiveAddrEndpoint = (EndPoint)anyV4;
+                if (isv6)
+                {
+                    buffer = v6buffer;
+                    receiveAddrEndpoint = (EndPoint)anyV6;
+                }
                 byte[] processBytes = buffer;
-                EndPoint receiveAddrEndpoint = null;
                 int bytesRead = receiveClient.Client.ReceiveFrom(buffer, ref receiveAddrEndpoint);
                 IPEndPoint receiveAddr = (IPEndPoint)receiveAddrEndpoint;
                 bool process = true;
@@ -521,7 +538,7 @@ namespace UDPMeshLib
                                 processBytes = new byte[bytesRead];
                                 Array.Copy(buffer, 0, processBytes, 0, bytesRead);
                             }
-                            UdpMeshCommon.ProcessBytes(processBytes, receiveAddr, callbacks);
+                            UdpMeshCommon.ProcessBytes(processBytes, bytesRead, receiveAddr, callbacks);
                         }
                         catch (Exception e)
                         {
@@ -529,7 +546,6 @@ namespace UDPMeshLib
                         }
                     }
                 }
-
             }
             catch (Exception e)
             {
@@ -564,7 +580,14 @@ namespace UDPMeshLib
         byte[] relayHeader;
         public void SendMessageToClient(Guid clientGuid, int type, byte[] data)
         {
-            SendMessageToClient(clientGuid, type, data, data.Length);
+            if (data != null)
+            {
+                SendMessageToClient(clientGuid, type, data, data.Length);
+            }
+            else
+            {
+                SendMessageToClient(clientGuid, type, null, 0);
+            }
         }
 
         public void SendMessageToClient(Guid clientGuid, int type, byte[] data, int length)
@@ -581,6 +604,7 @@ namespace UDPMeshLib
                     return;
                 }
                 int sendBufferLength = UdpMeshCommon.GetPayload(type, data, length, sendBuffer);
+                //We can use v4 or v6, let's select the lowest latency
                 if (peer.usev4 && peer.usev6 && clientSocketv4 != null && clientSocketv6 != null)
                 {
                     if (peer.latency4 < peer.latency6)
@@ -593,16 +617,19 @@ namespace UDPMeshLib
                     }
                     return;
                 }
-                if (peer.usev6 && clientSocketv6 != null)
+                //Have to use V6, only v6 contact
+                if (peer.usev6 && !peer.usev4 && clientSocketv6 != null)
                 {
                     UdpMeshCommon.Send(clientSocketv6, sendBuffer, sendBufferLength, peer.contactV6);
                     return;
                 }
-                if (peer.usev4 && clientSocketv4 != null)
+                //Have to use V6, only v4 contact
+                if (peer.usev4 && !peer.usev6 && clientSocketv4 != null)
                 {
                     UdpMeshCommon.Send(clientSocketv4, sendBuffer, sendBufferLength, peer.contactV4);
                     return;
                 }
+                //We currently have no contact and must send through the server to establish contact.
                 int relayBufferLength = 40 + sendBufferLength;
                 //Initialise header if this is the first run, we can use the relayBuffer as it is still free.
                 if (relayHeader == null)

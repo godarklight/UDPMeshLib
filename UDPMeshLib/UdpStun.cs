@@ -130,10 +130,10 @@ namespace UDPMeshLib
         /// </summary>
         /// <returns>Stun result</returns>
         /// <param name="inputData">Input raw stun message</param>
-        public static StunResult ProcessStun(byte[] inputData)
+        public static StunResult ProcessStun(byte[] inputData, int inputDataLength)
         {
             StunResult retVal = new StunResult();
-            if (inputData.Length < 20)
+            if (inputDataLength < 20)
             {
                 return retVal;
             }

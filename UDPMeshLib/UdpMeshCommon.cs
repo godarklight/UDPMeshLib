@@ -109,13 +109,13 @@ namespace UDPMeshLib
         private static byte[] tempType = new byte[4];
         private static byte[] magicBytes = UdpMeshCommon.GetMagicHeader();
 
-        public static void ProcessBytes(byte[] inputData, IPEndPoint endpoint, Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks)
+        public static void ProcessBytes(byte[] inputData, int inputDataLength, IPEndPoint endpoint, Dictionary<int, Action<byte[], int, Guid, IPEndPoint>> callbacks)
         {
-            if (inputData.Length >= 20)
+            if (inputDataLength >= 20)
             {
                 if (inputData[4] == 33 && inputData[5] == 18 && inputData[6] == 164 && inputData[7] == 66)
                 {
-                    UdpStun.ProcessStun(inputData);
+                    UdpStun.ProcessStun(inputData, inputDataLength);
                 }
             }
             for (int i = 0; i < magicBytes.Length; i++)
@@ -127,7 +127,7 @@ namespace UDPMeshLib
             }
             lock (tempGuidBytes)
             {
-                int bytesToProcess = inputData.Length - 4;
+                int bytesToProcess = inputDataLength - 4;
                 if (bytesToProcess < 16)
                 {
                     return;
@@ -142,10 +142,10 @@ namespace UDPMeshLib
                 Array.Copy(inputData, 20, tempType, 0, 4);
                 FlipEndian(ref tempType);
                 int dataType = BitConverter.ToInt32(tempType, 0);
-                //Console.WriteLine("Processed " + inputData.Length + " type: " + dataType);
+                //Console.WriteLine("Processed " + inputDataLength + " type: " + dataType);
                 if (callbacks.ContainsKey(dataType))
                 {
-                    callbacks[dataType](inputData, recvGuid, endpoint);
+                    callbacks[dataType](inputData, inputDataLength, recvGuid, endpoint);
                 }
             }
         }
@@ -204,7 +204,14 @@ namespace UDPMeshLib
 
         public static void Send(UdpClient socket, byte[] data, IPEndPoint endPoint)
         {
-            Send(socket, data, data.Length, endPoint);
+            if (data != null)
+            {
+                Send(socket, data, data.Length, endPoint);
+            }
+            else
+            {
+                Send(socket, null, 0, endPoint);
+            }
         }
 
         public static void Send(UdpClient socket, byte[] data, int length, IPEndPoint endPoint)

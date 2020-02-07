@@ -137,7 +137,7 @@ namespace UDPMesh
             }
         }
 
-        private static void UpdateClientTest(byte[] inputData, Guid client, IPEndPoint endpoint)
+        private static void UpdateClientTest(byte[] inputData, int length, Guid client, IPEndPoint endpoint)
         {
             testTime[client] = DateTime.UtcNow.Ticks;
         }

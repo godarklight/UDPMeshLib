@@ -16,7 +16,7 @@ namespace UDPMeshLib
         private bool error = false;
         private bool shutdown = false;
         private Dictionary<Guid, UdpPeer> clients = new Dictionary<Guid, UdpPeer>();
-        private Dictionary<int, Action<byte[], Guid, IPEndPoint>> callbacks = new Dictionary<int, Action<byte[], Guid, IPEndPoint>>();
+        private Dictionary<int, Action<byte[], int, Guid, IPEndPoint>> callbacks = new Dictionary<int, Action<byte[], int, Guid, IPEndPoint>>();
         private Action<string> debugLog;
         private byte[] sendBuffer = new byte[2048];
 
@@ -42,7 +42,7 @@ namespace UDPMeshLib
             }
         }
 
-        public void RegisterCallback(int type, Action<byte[], Guid, IPEndPoint> callback)
+        public void RegisterCallback(int type, Action<byte[], int, Guid, IPEndPoint> callback)
         {
             if (type < 0)
             {
@@ -102,7 +102,7 @@ namespace UDPMeshLib
         }
 
         private List<Guid> removeList = new List<Guid>();
-        private List<byte[]> clientBytes = new List<byte[]>();
+        private List<Tuple<byte[], int>> clientBytes = new List<Tuple<byte[], int>>();
 
         private void SendClientsMeshState()
         {
@@ -112,7 +112,7 @@ namespace UDPMeshLib
                 clientBytes.Clear();
                 foreach (UdpPeer client in clients.Values)
                 {
-                    clientBytes.Add(client.GetClientEndpointMessage());
+                    clientBytes.Add(new Tuple<byte[], int>(client.GetClientEndpointMessage(), client.GetEndpointMessageLength()));
                 }
                 foreach (KeyValuePair<Guid, UdpPeer> client in clients)
                 {
@@ -124,17 +124,17 @@ namespace UDPMeshLib
                     if (serverSocketv4 != null && client.Value.usev4)
                     {
                         UdpMeshCommon.Send(serverSocketv4, sendGuidBytes, client.Value.contactV4);
-                        foreach (byte[] clientByte in clientBytes)
+                        foreach (Tuple<byte[],int> clientByte in clientBytes)
                         {
-                            UdpMeshCommon.Send(serverSocketv4, clientByte, client.Value.contactV4);
+                            UdpMeshCommon.Send(serverSocketv4, clientByte.Item1, clientByte.Item2, client.Value.contactV4);
                         }
                     }
                     if (serverSocketv6 != null && client.Value.usev6)
                     {
                         UdpMeshCommon.Send(serverSocketv6, sendGuidBytes, client.Value.contactV6);
-                        foreach (byte[] clientByte in clientBytes)
+                        foreach (Tuple<byte[], int> clientByte in clientBytes)
                         {
-                            UdpMeshCommon.Send(serverSocketv6, clientByte, client.Value.contactV6);
+                            UdpMeshCommon.Send(serverSocketv6, clientByte.Item1, clientByte.Item2, client.Value.contactV6);
                         }
                     }
                 }
@@ -156,7 +156,7 @@ namespace UDPMeshLib
                 byte[] receiveBytes = receiveClient.EndReceive(ar, ref receiveAddr);
                 if (receiveBytes.Length >= 24)
                 {
-                    UdpMeshCommon.ProcessBytes(receiveBytes, receiveAddr, callbacks);
+                    UdpMeshCommon.ProcessBytes(receiveBytes, receiveBytes.Length, receiveAddr, callbacks);
                 }
             }
             catch (Exception e)
@@ -205,13 +205,13 @@ namespace UDPMeshLib
         private byte[] tempClientAddress6 = new byte[16];
         private byte[] tempClientPort = new byte[2];
 
-        private void ClientReport(byte[] inputData, Guid guid, IPEndPoint endpoint)
+        private void ClientReport(byte[] inputData, int inputDataLength, Guid guid, IPEndPoint endpoint)
         {
             List<IPEndPoint> newEndpoints = new List<IPEndPoint>();
             lock (tempClientPort)
             {
                 int readPos = 24;
-                if (inputData.Length - readPos < 1)
+                if (inputDataLength - readPos < 1)
                 {
                     return;
                 }
@@ -219,7 +219,7 @@ namespace UDPMeshLib
                 readPos++;
                 for (int i = 0; i < v4Num; i++)
                 {
-                    if (inputData.Length - readPos < 6)
+                    if (inputDataLength - readPos < 6)
                     {
                         return;
                     }
@@ -232,7 +232,7 @@ namespace UDPMeshLib
                     newEndpoints.Add(new IPEndPoint(ip, port));
                     readPos += 2;
                 }
-                if (inputData.Length - readPos < 1)
+                if (inputDataLength - readPos < 1)
                 {
                     return;
                 }
@@ -240,7 +240,7 @@ namespace UDPMeshLib
                 readPos++;
                 for (int i = 0; i < v6Num; i++)
                 {
-                    if (inputData.Length - readPos < 18)
+                    if (inputDataLength - readPos < 18)
                     {
                         return;
                     }
@@ -285,10 +285,10 @@ namespace UDPMeshLib
         private byte[] tempGuid = new byte[16];
         private byte[] relayHeader = null;
 
-        private void RelayMessage(byte[] inputBytes, Guid client, IPEndPoint endPoint)
+        private void RelayMessage(byte[] inputBytes, int inputBytesLength, Guid client, IPEndPoint endPoint)
         {
             //A valid message must contain 2 headers (24 bytes) and a destination GUID (16 bytes)
-            if (inputBytes.Length < 64)
+            if (inputBytesLength < 64)
             {
                 return;
             }
@@ -334,9 +334,9 @@ namespace UDPMeshLib
             }
         }
 
-        private void ClientExternalReport(byte[] inputBytes, Guid guid, IPEndPoint iPEndPoint)
+        private void ClientExternalReport(byte[] inputBytes, int inputBytesLength, Guid guid, IPEndPoint iPEndPoint)
         {
-            if (inputBytes.Length != 47 && inputBytes.Length != 59)
+            if (inputBytesLength != 47 && inputBytesLength != 59)
             {
                 return;
             }
@@ -354,7 +354,7 @@ namespace UDPMeshLib
                 {
                     IPAddress addr;
                     int port;
-                    if (inputBytes.Length == 47 && type == 4)
+                    if (inputBytesLength == 47 && type == 4)
                     {
                         lock (tempClientPort)
                         {
@@ -367,7 +367,7 @@ namespace UDPMeshLib
                         IPEndPoint endPoint = new IPEndPoint(addr, port);
                         peer.AddRemoteEndpoint(endPoint);
                     }
-                    if (inputBytes.Length == 59 && type == 6)
+                    if (inputBytesLength == 59 && type == 6)
                     {
                         lock (tempClientPort)
                         {

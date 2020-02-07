@@ -126,6 +126,13 @@ namespace UDPMeshLib
             return cachedData;
         }
 
+        internal int GetEndpointMessageLength()
+        {
+            GetServerEndpointMessage();
+            return cachedDataLength;
+        }
+
+
         /// <summary>
         /// Send FROM the server
         /// </summary>
@@ -148,29 +155,29 @@ namespace UDPMeshLib
                     }
                 }
                 int cachedDataBuildLength = 18 + 6 * v4end.Count + 18 * v6end.Count;
-                Array.Copy(guid.ToByteArray(), cachedData, 16);
-                cachedData[16] = (Byte)v4end.Count;
+                Array.Copy(guid.ToByteArray(), cachedDataBuild, 16);
+                cachedDataBuild[16] = (Byte)v4end.Count;
                 int writepos = 17;
                 foreach (IPEndPoint endPoint in v4end)
                 {
                     byte[] addrBytes = endPoint.Address.GetAddressBytes();
-                    Array.Copy(addrBytes, 0, cachedData, writepos, 4);
+                    Array.Copy(addrBytes, 0, cachedDataBuild, writepos, 4);
                     writepos += 4;
                     byte[] portBytes = BitConverter.GetBytes((ushort)endPoint.Port);
                     UdpMeshCommon.FlipEndian(ref portBytes);
-                    Array.Copy(portBytes, 0, cachedData, writepos, 2);
+                    Array.Copy(portBytes, 0, cachedDataBuild, writepos, 2);
                     writepos += 2;
                 }
-                cachedData[writepos] = (Byte)v6end.Count;
+                cachedDataBuild[writepos] = (Byte)v6end.Count;
                 writepos++;
                 foreach (IPEndPoint endPoint in v6end)
                 {
                     byte[] addrBytes = endPoint.Address.GetAddressBytes();
-                    Array.Copy(addrBytes, 0, cachedData, writepos, 16);
+                    Array.Copy(addrBytes, 0, cachedDataBuild, writepos, 16);
                     writepos += 16;
                     byte[] portBytes = BitConverter.GetBytes((ushort)endPoint.Port);
                     UdpMeshCommon.FlipEndian(ref portBytes);
-                    Array.Copy(portBytes, 0, cachedData, writepos, 2);
+                    Array.Copy(portBytes, 0, cachedDataBuild, writepos, 2);
                     writepos += 2;
 
                 }
