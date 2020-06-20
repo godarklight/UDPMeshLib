@@ -45,7 +45,7 @@ namespace UDPMesh
             {
                 Console.WriteLine("IP: " + ip + ", family: " + ip.AddressFamily);
             }
-            IPAddress[] ipAddrs = Dns.GetHostAddresses("godarklight.info.tm");
+            IPAddress[] ipAddrs = Dns.GetHostAddresses("godarklight.privatedns.org");
             IPAddress ipAddr = IPAddress.None;
             IPAddress ipAddr6 = IPAddress.None;
 
@@ -62,7 +62,7 @@ namespace UDPMesh
             }
             if (ipAddr == IPAddress.None)
             {
-                Console.WriteLine("Unable to lookup godarklight.info.tm v4");
+                Console.WriteLine("Unable to lookup godarklight.privatedns.org v4");
             }
             else
             {
@@ -70,7 +70,7 @@ namespace UDPMesh
             }
             if (ipAddr6 == IPAddress.None)
             {
-                Console.WriteLine("Unable to lookup godarklight.info.tm v6");
+                Console.WriteLine("Unable to lookup godarklight.privatedns.org v6");
             }
             else
             {
