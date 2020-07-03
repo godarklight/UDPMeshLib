@@ -40,6 +40,7 @@
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>copy UDPMeshLib.dll ..\GameData\DarkMultiPlayer\Plugins\UDPMeshLib.dll</PostBuildEvent>
+    <PostBuildEvent>copy UDPMeshLib.dll ..\GameData\DarkMultiPlayer\Plugins\UDPMeshLib.dll
+copy UDPMeshLib.dll ..\DMPServer\UDPMeshLib.dll</PostBuildEvent>
   </PropertyGroup>
 </Project>
