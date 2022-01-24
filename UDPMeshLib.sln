@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30114.105
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UDPMesh", "UDPMesh\UDPMesh.csproj", "{110EFC1B-1AB7-4664-A4FC-AD5E2D6EDA60}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UDPMeshLib", "UDPMeshLib\UDPMeshLib.csproj", "{0C6AB64F-3095-498D-9A32-A62D9CF85B9A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{110EFC1B-1AB7-4664-A4FC-AD5E2D6EDA60}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{110EFC1B-1AB7-4664-A4FC-AD5E2D6EDA60}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{110EFC1B-1AB7-4664-A4FC-AD5E2D6EDA60}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{110EFC1B-1AB7-4664-A4FC-AD5E2D6EDA60}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0C6AB64F-3095-498D-9A32-A62D9CF85B9A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0C6AB64F-3095-498D-9A32-A62D9CF85B9A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0C6AB64F-3095-498D-9A32-A62D9CF85B9A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0C6AB64F-3095-498D-9A32-A62D9CF85B9A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
